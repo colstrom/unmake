@@ -1,0 +1,80 @@
+#!/bin/sh
+
+if test -n "${DEBUG}"; then
+    set -o xtrace
+fi
+
+set -o nounset
+
+MAKEFILE=${MAKEFILE:-'Makefile'}
+
+lines_before() {
+    PATTERN=${1}
+    awk "/${PATTERN}/ { exit }; 1"
+}
+
+lines_after() {
+    PATTERN=${1}
+    awk "/${PATTERN}/ { matched=NR; next } matched"
+}
+
+without_empty_lines() {
+    awk '!/^$/'
+}
+
+without_leading() {
+    STRING=${1}
+    sed -E "s/^${STRING}+//"
+}
+
+targets() {
+    grep -E '^[[:alpha:]-]+:' ${MAKEFILE} | sed 's/:.*//' | sort -u
+}
+
+target() {
+    TARGET=${1}
+    cat ${MAKEFILE} | lines_after ^${TARGET}: |  lines_before '^[A-Za-z-]+:' | without_empty_lines | without_leading '[[:space:]]'
+}
+
+variables() {
+    TYPE=${1}
+    case ${TYPE} in
+        assigned|set)
+            grep -Eo '[A-Z_]+[[:space:]]*.?=' | sed 's/[^A-Z_]//g' | sort -u;;
+        referenced|used)
+            grep -Eo '\${[A-Z_]+}' | sed 's/[${}]//g' | sort -u;;
+    esac
+}
+
+variable() {
+    VARIABLE=${1}
+    grep -E "${VARIABLE}[[:space:]]*.?=.*" ${MAKEFILE}
+}
+
+header() {
+    UNMAKE_HEADER=${UNMAKE_HEADER:-'unmake.header'}
+    test -f ${UNMAKE_HEADER} && cat ${UNMAKE_HEADER}
+}
+
+footer() {
+    UNMAKE_FOOTER=${UNMAKE_FOOTER:-'unmake.footer'}
+    test -f ${UNMAKE_FOOTER} && cat ${UNMAKE_FOOTER}
+}
+
+extract() {
+    TARGET=${1}
+
+    header
+
+    target ${TARGET} | variables used | while read VARIABLE; do
+        variable ${VARIABLE}
+    done
+
+    target ${TARGET}
+
+    footer
+
+    echo
+}
+
+eval ${@}
